@@ -6,7 +6,7 @@ import { Label } from "../components/ui/label";
 import { Navigation, Footer } from "../components/SharedComponents";
 import { seedFirestoreWithProducts } from "../utils/seedDatabase";
 import { useProducts } from "../contexts/ProductContext";
-import { uploadProductImage } from "../services/firestoreService";
+import { uploadProductImage, updateProduct } from "../services/firestoreService";
 
 const Admin = () => {
   const { products, refetchProducts, loading } = useProducts();
@@ -29,16 +29,53 @@ const Admin = () => {
     imageType: 'main' | 'gallery'
   ) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.warn('No file selected');
+      return;
+    }
 
     try {
       setUploadingId(productId);
+      
+      // Step 1: Upload image to Cloud Storage
+      console.log(`Uploading ${imageType} image for product ${productId}...`);
       const imageUrl = await uploadProductImage(file, productId, imageType);
-      alert(`Image uploaded successfully!\nURL: ${imageUrl}`);
+      console.log('Image uploaded successfully:', imageUrl);
+      
+      // Step 2: Get the current product data
+      const product = products.find(p => p.id === productId);
+      if (!product) {
+        throw new Error('Product not found');
+      }
+      
+      // Step 3: Update product document with new image URL
+      if (imageType === 'main') {
+        console.log('Saving main image URL to Firestore...');
+        await updateProduct(productId, {
+          ...product,
+          image: imageUrl
+        });
+      } else if (imageType === 'gallery') {
+        console.log('Adding gallery image URL to Firestore...');
+        const updatedImages = [...(product.images || []), imageUrl];
+        await updateProduct(productId, {
+          ...product,
+          images: updatedImages
+        });
+      }
+      
+      console.log('Product updated successfully');
+      alert(`Image uploaded and saved successfully!`);
+      
+      // Step 4: Refresh product list
       await refetchProducts();
+      
+      // Reset the input
+      e.target.value = '';
     } catch (error) {
-      alert('Failed to upload image. Check console for details.');
-      console.error(error);
+      console.error('Full error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to upload image: ${errorMessage}\n\nCheck console for more details.`);
     } finally {
       setUploadingId(null);
     }
@@ -269,6 +306,38 @@ const Admin = () => {
         </Card>
 
         {/* Firebase Setup Info */}
+        <Card className="p-6 mt-8 bg-yellow-50 border-yellow-200 mb-8">
+          <h2 className="text-lg font-semibold mb-3 text-yellow-900">🔧 Troubleshooting Image Upload</h2>
+          <div className="text-sm text-yellow-800 space-y-3">
+            <p className="font-medium">If image upload is not working:</p>
+            <ol className="list-decimal list-inside space-y-2 ml-2">
+              <li>
+                <strong>Open Browser Console:</strong> Press F12 or right-click → Inspect → Console tab
+              </li>
+              <li>
+                <strong>Look for errors:</strong> Check if there are any red error messages
+              </li>
+              <li>
+                <strong>Check Firebase rules:</strong> Go to Firebase Console → Storage → Rules
+                <br />
+                <span className="text-xs text-yellow-700 ml-4 block">Ensure rule allows writes: `allow write: if true;` for test mode</span>
+              </li>
+              <li>
+                <strong>Verify Firebase config:</strong> Check that `.env.local` has correct Firebase credentials
+              </li>
+              <li>
+                <strong>Check network:</strong> Go to Console → Network tab, try uploading again, look for failed requests
+              </li>
+              <li>
+                <strong>Check product data:</strong> Select a product in Firestore to verify it has all required fields
+              </li>
+            </ol>
+            <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mt-3 text-xs">
+              <strong>💡 Tip:</strong> All error messages will appear in the browser console and in alert boxes. Open the console (F12) before trying to upload!
+            </div>
+          </div>
+        </Card>
+
         <Card className="p-6 mt-8 bg-green-50 border-green-200">
           <h2 className="text-lg font-semibold mb-3 text-green-900">✅ Firebase Connected</h2>
           <div className="text-sm text-green-800 space-y-2">
